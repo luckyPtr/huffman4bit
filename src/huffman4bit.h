@@ -1,17 +1,19 @@
 #ifndef __HUFFMAN4BIT_H__
 #define __HUFFMAN4BIT_H__
 
-#define MAX_CNT     64
-#define BIT_CNT         4
+#define MAX_CNT         64U
+#define BIT_CNT         4U
 #define MAX_SYMBOLS     (1U << BIT_CNT)
-#define MAX_NODES       (2 * MAX_SYMBOLS - 1)
+#define MAX_NODES       (2U * MAX_SYMBOLS - 1)
 
 typedef unsigned char h4b_uint8_t;
 typedef char h4b_int8_t;
 typedef unsigned short int h4b_uint16_t;
 typedef unsigned int h4b_uint32_t;
+typedef int h4b_int32_t;
 
-#define H4B_CONST   const
+typedef h4b_uint8_t huffman_tree_tbl_t[MAX_SYMBOLS - 1][2];
+
 
 typedef struct 
 {
@@ -23,7 +25,7 @@ typedef struct
 
 typedef struct
 {
-    h4b_uint8_t code;
+    h4b_uint32_t code;
     h4b_uint8_t length;
 } huffman_code_t;
 
@@ -36,8 +38,10 @@ typedef struct
 
 
 
-
-void h4b_compress(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t *output_data, h4b_uint32_t *output_len, h4b_uint8_t *huffman_tree);
-void decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t (*huffman_tree)[2], h4b_uint8_t *output_data, h4b_uint32_t *output_len);
+void h4b_reset_tree(void);
+void h4b_count_freq_append(h4b_uint8_t *data, h4b_uint32_t size);
+void h4b_create_huffman_tree(huffman_tree_tbl_t *table);
+void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t *output_data, h4b_uint32_t *output_len);
+void h4b_decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, huffman_tree_tbl_t *table, h4b_uint8_t *output_data, h4b_uint32_t *output_len);
 
 #endif // !__HUFFMAN4BIT_H__

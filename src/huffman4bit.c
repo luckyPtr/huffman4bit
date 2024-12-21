@@ -43,13 +43,13 @@ static void buildHuffmanTable(int root, uint16_t code, uint8_t length) {
 
 // 导出Huffman tree表 
 // 仅保留非叶子节点
-static void export_huffman_tree_table(h4b_uint8_t (*table)[2])
+static void export_huffman_tree_table(huffman_tree_tbl_t *table)
 {
     h4b_uint8_t i;
     for (i = MAX_SYMBOLS; i < MAX_NODES; i++)
     {
-        table[i - MAX_SYMBOLS][0] = (h4b_uint8_t)huffman_tree.nodes[i].left;
-        table[i - MAX_SYMBOLS][1] = (h4b_uint8_t)huffman_tree.nodes[i].right;
+        (*table)[i - MAX_SYMBOLS][0] = (h4b_uint8_t)huffman_tree.nodes[i].left;
+        (*table)[i - MAX_SYMBOLS][1] = (h4b_uint8_t)huffman_tree.nodes[i].right;
     }
 }
 
@@ -93,11 +93,11 @@ void build_huffman_tree(void)
     
 }
 
-void create_huffman_tree(h4b_uint8_t *huffman_tree_tbl)
+void h4b_create_huffman_tree(huffman_tree_tbl_t *table)
 {
     build_huffman_tree();
     cal_huffman_table();
-    export_huffman_tree_table(huffman_tree_tbl);
+    export_huffman_tree_table(table);
 }
 
 
@@ -118,7 +118,7 @@ void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t *ou
     h4b_uint32_t i;
     h4b_int8_t j;
     h4b_uint32_t bit_pos = 8;
-    h4b_uint16_t code;
+    h4b_uint32_t code;
     h4b_uint8_t length;
     h4b_uint8_t data_h, data_l;
     h4b_uint8_t padding;
@@ -132,14 +132,14 @@ void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t *ou
         length = huffman_tree.code_table[data_h].length;
         for (j = length - 1; j >= 0; j--, bit_pos++)
         {
-            set_bit(output_data, bit_pos, code & (1 << j));
+            set_bit(output_data, bit_pos, (code >> j) & 0x01);
         }
 
         code = huffman_tree.code_table[data_l].code;
         length = huffman_tree.code_table[data_l].length;
         for (j = length - 1; j >= 0; j--, bit_pos++)
         {
-            set_bit(output_data, bit_pos, code & (1 << j));
+            set_bit(output_data, bit_pos, (code >> j) & 0x01);
         }
     }
 
@@ -154,7 +154,7 @@ void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t *ou
     *output_len =  bit_pos / 8;
 }
 
-void decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t (*huffman_tree)[2], h4b_uint8_t *output_data, h4b_uint32_t *output_len)
+void h4b_decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, huffman_tree_tbl_t *table, h4b_uint8_t *output_data, h4b_uint32_t *output_len)
 {
     h4b_uint32_t i;
     h4b_uint8_t byte;
@@ -164,37 +164,31 @@ void decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t (*huffm
     h4b_uint8_t padding = input_data[0] & 0x07;
     h4b_uint8_t *data_ptr = &input_data[1];   // 第一个字节是头跳过
     h4b_uint32_t total_bits = ((input_len - 1) << 3) - padding;
-    static H4B_CONST h4b_uint8_t shift_mask[8] = {0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01};
 
     for (i = 0; i < total_bits; i++)
     {
         byte = data_ptr[i >> 3];
-        //if ((byte << (i & 0x07)) & 0x80)
-        if (byte & shift_mask[i & 0x07])
+        if ((byte << (i & 0x07)) & 0x80)
         {
-            index = huffman_tree[index][1];
+            index = (*table)[index][1];
         }
         else
         {
-            index = huffman_tree[index][0];
+            index = (*table)[index][0];
         }
 
         if (index < MAX_SYMBOLS)
         {
-            output_data[byte_pos] = (high_bits) ? (index << 4) : (output_data[byte_pos] | index);
-            byte_pos += high_bits ? 0 : 1;
+            if (high_bits)
+            {
+                output_data[byte_pos] = index << 4;
+            }
+            else
+            {
+                output_data[byte_pos++] |= index;
+            }
             index = MAX_NODES - MAX_SYMBOLS - 1;
-            high_bits ^= 1;  // 切换高低位标志
-            // if (high_bits)
-            // {
-            //     output_data[byte_pos] = index << 4;
-            // }
-            // else
-            // {
-            //     output_data[byte_pos++] |= index;
-            // }
-            // index = MAX_NODES - MAX_SYMBOLS - 1;
-            // high_bits = !high_bits;
+            high_bits ^= 1;
         }
         else
         {
@@ -221,7 +215,7 @@ void h4b_reset_tree(void)
     }
 }
 
-void h4b_cal_freq_append(h4b_uint8_t *data, h4b_uint32_t size)
+void h4b_count_freq_append(h4b_uint8_t *data, h4b_uint32_t size)
 {
     uint8_t h, l;
     uint32_t i;
@@ -235,45 +229,4 @@ void h4b_cal_freq_append(h4b_uint8_t *data, h4b_uint32_t size)
     }
 }
 
-
-
-void print_code(int code, int len)
-{
-    while (len)
-    {
-        printf("%d", (code & (1 << (len - 1))) ? 1 : 0);
-        len--;
-    }
-    
-}
-
-void h4b_compress(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t *output_data, h4b_uint32_t *output_len, h4b_uint8_t *output_huffman_tree)
-{
-    h4b_reset_tree();
-    h4b_cal_freq_append(input_data, input_len);
-    create_huffman_tree(output_huffman_tree);
-    
-    for (int i = 0; i < 31; i++)
-    {
-        printf("%02d freq:%d parent:%d left:%d right:%d\n", i, huffman_tree.nodes[i].freq, huffman_tree.nodes[i].parent, huffman_tree.nodes[i].left, huffman_tree.nodes[i].right);
-    }
-
-    for (int i = 0; i < 16; i++)
-    {
-        printf("%02d %d %d ", i, huffman_tree.code_table[i].code, huffman_tree.code_table[i].length);
-        print_code(huffman_tree.code_table[i].code, huffman_tree.code_table[i].length);
-        printf("\n");
-    }
-
-    int new_size = 0;
-    for (int i = 0; i < input_len; i++)
-    {
-        uint8_t h = input_data[i] >> 4;
-        uint8_t l = input_data[i] & 0x0F;
-        new_size += huffman_tree.code_table[h].length + huffman_tree.code_table[l].length;
-    }
-    printf("%d -> %d\n", input_len, (new_size + 7) / 8);
-    h4b_encode(input_data, input_len, output_data, output_len);
-    printf("End1\n");
-}   
 
