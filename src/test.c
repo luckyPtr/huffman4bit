@@ -134,7 +134,7 @@ unsigned char test_data[] =
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 };
-
+#include "bm_img.h"
 
 int main(int argc, char *argv[])
 {
@@ -145,18 +145,27 @@ int main(int argc, char *argv[])
 	huffman_tree_tbl_t huffman_tree_tbl;
 
 	h4b_reset_tree();
-	h4b_count_freq_append(test_data, 1024);
-	h4b_create_huffman_tree(&huffman_tree_tbl);
-	h4b_encode(test_data, 1024, output_data, &output_len);
-	h4b_decode(output_data, output_len, &huffman_tree_tbl, output_data1, &output_len1);
-	if (memcmp(test_data, output_data1, 1024))
-	{
-		printf("failed\n");
-	}
-	else
-	{
-		printf("successful\n");
-	}
+	h4b_add_centroid(IMG_BAD_APPLE[0], 1024);
+	h4b_add_centroid(IMG_BAD_APPLE[20], 1024);
+	h4b_add_centroid(IMG_BAD_APPLE[40], 1024);
+
+
+	// for (int i = 0; i < 40; i++)
+	// {
+	// 	h4b_count_freq_append(IMG_BAD_APPLE[i], 1024);
+	// }
+	
+	// h4b_create_huffman_tree(&huffman_tree_tbl);
+	// h4b_encode(test_data, 1024, output_data, &output_len);
+	// h4b_decode(output_data, output_len, &huffman_tree_tbl, output_data1, &output_len1);
+	// if (memcmp(test_data, output_data1, 1024))
+	// {
+	// 	printf("failed\n");
+	// }
+	// else
+	// {
+	// 	printf("successful\n");
+	// }
 	// for (int i = 0; i < 1024; i++)
 	// {
 	// 	printf("0x%02x, ", output_data1[i]);
