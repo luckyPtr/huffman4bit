@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "d:/WorkspacePrivate/huffman4bit/src",
-      "program": "d:/WorkspacePrivate/huffman4bit/src/build/Debug/outDebug",
+      "cwd": "e:/WorkSpace/huffman4bit/src",
+      "program": "e:/WorkSpace/huffman4bit/src/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [

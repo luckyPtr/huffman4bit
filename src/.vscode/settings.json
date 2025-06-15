@@ -60,6 +60,8 @@
     "string.h": "c",
     "huffman4bit.h": "c",
     "stdio.h": "c",
-    "stdint.h": "c"
+    "stdint.h": "c",
+    "stdlib.h": "c",
+    "math.h": "c"
   }
 }

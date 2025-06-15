@@ -10,7 +10,9 @@
                 "${file}",
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe",
-                ""
+                "-I tools/huffman4bit_encoder_cmd/pcre2",
+                "-L tools/huffman4bit_encoder_cmd/pcre2",
+                "-lpcre2-8"
             ],
             "options": {
                 "cwd": "C:/mingw64/bin"
