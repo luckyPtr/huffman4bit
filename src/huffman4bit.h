@@ -5,7 +5,13 @@
 extern "C" {
 #endif
 
-#define USE_ENCODE          ( 1U )                     // if 0, only decode, otherwise encode and decode, default is 0 for size optimization
+/* Compile-time switch: decode-only (default, MCU friendly) vs encode+decode.
+ * Default is 0 so that MCU projects can #include "huffman4bit.h" and compile
+ * huffman4bit.c with zero extra configuration.
+ * Encoder/PC tools override this with -DUSE_ENCODE=1 in their CFLAGS. */
+#ifndef USE_ENCODE
+#define USE_ENCODE          ( 0U )
+#endif
 #define BIT_CNT             ( 4U )                     // symbol bit count ("symbol" is the smallest unit of data)
 #define MAX_SYMBOLS         ( 1U << BIT_CNT )          // possible symbols count
 #define MAX_NODES           ( 2U * MAX_SYMBOLS - 1U )  // Huffman tree nodes count
@@ -69,12 +75,28 @@ typedef struct
 
 
 void h4b_init(void);
-void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t *output_data, h4b_uint32_t *output_len);
+void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t transform,
+                h4b_uint8_t *output_data, h4b_uint32_t *output_len);
 void h4b_add_array(h4b_uint8_t *input_data, h4b_uint32_t input_len);
 void h4b_clustering(h4b_uint8_t k);
 void h4b_create_huffman_tree(huffman_tree_tbl_t *tables);
+
+/* Per-array preprocessing: XOR with previous byte, then zero-run-length
+ * coding ("00 00 cnt" = cnt+2 zeros). Applied before Huffman coding when it
+ * shrinks the array; flagged in the stream header byte.
+ * output_data must have room for 2*input_len bytes. Returns output length. */
+h4b_uint32_t h4b_xor_zrl_encode(const h4b_uint8_t *input_data, h4b_uint32_t input_len,
+                                h4b_uint8_t *output_data);
 #endif // !USE_ENCODE
+
+/* Byte-sink callback for the streaming decoder (MCU: wire it to the display
+ * bus to decode straight to the screen with no frame buffer). */
+typedef void (*h4b_emit_fn)(void *ctx, h4b_uint8_t byte);
+
 void h4b_decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, huffman_tree_tbl_t *table, h4b_uint8_t *output_data, h4b_uint32_t *output_len);
+void h4b_decode_stream(const h4b_uint8_t *input_data, h4b_uint32_t input_len,
+                       const huffman_tree_tbl_t *table,
+                       h4b_emit_fn emit, void *ctx);
 
 #if defined (__cplusplus)
 }   // extern "C"

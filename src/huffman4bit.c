@@ -385,6 +385,7 @@ static h4b_uint8_t find_nearest_cluster(h4b_uint8_t *input_data, h4b_uint32_t in
 void h4b_init(void)
 {
     h4b_uint8_t i, k;
+    h4b_uint32_t j;
     for (k = 0; k < MAX_CLUSTER_COUNT; k++)
     {
         for (i = 0; i < MAX_NODES; i++)
@@ -403,11 +404,12 @@ void h4b_init(void)
     // 释放原始数组
     if (input_buffer.array_data != NULL)
     {
-        for (i = 0; i < input_buffer.array_count; i++)
+        for (j = 0; j < input_buffer.array_count; j++)
         {
-            free(input_buffer.array_data[i].array_ptr);
+            free(input_buffer.array_data[j].array_ptr);
         }
         free(input_buffer.array_data);
+        input_buffer.array_data = NULL;
     }
     input_buffer.array_count = 0;
     input_buffer.capacity = 0;
@@ -510,14 +512,87 @@ static void set_bit(h4b_uint8_t *output_data, h4b_uint32_t pos, h4b_uint8_t bit)
 }
 
 /**
- * @brief Encode the input data using the nearest Huffman tree.
- * 
+ * @brief Per-array preprocessing: XOR with previous byte, then zero-run
+ *        coding. A run of >= 2 zero bytes becomes the 3-byte marker
+ *        00 00 (cnt-2); a lone zero stays literal. The coding is
+ *        self-delimiting: the encoder never emits two adjacent literal
+ *        zeros, so "00 00" in the stream is always a marker.
+ *
  * @param input_data Pointer to the input data array.
  * @param input_len Length of the input data.
+ * @param output_data Pointer to the output buffer (needs 2*input_len bytes).
+ * @return Length of the transformed data.
+ */
+h4b_uint32_t h4b_xor_zrl_encode(const h4b_uint8_t *input_data, h4b_uint32_t input_len,
+                                h4b_uint8_t *output_data)
+{
+    h4b_uint32_t i = 0;
+    h4b_uint32_t o = 0;
+
+    while (i < input_len)
+    {
+        /* transformed byte y[i] = x[i] ^ x[i-1]: y == 0 <=> x[i] == x[i-1]
+         * (y[0] = x[0], so a leading 0x00 byte is also a transformed zero
+         * and must join the run - otherwise it would be emitted as a lone
+         * literal zero directly before a "00 00 cnt" marker, breaking the
+         * self-delimiting invariant) */
+        if ((i == 0 && input_data[0] == 0x00) ||
+            (i > 0 && input_data[i] == input_data[i - 1]))
+        {
+            h4b_uint32_t run = 1;
+            h4b_uint32_t r;
+
+            while ((i + run < input_len) && (input_data[i + run] == input_data[i + run - 1]))
+            {
+                run++;
+            }
+            if (run >= 2)
+            {
+                r = run;
+                for (;;)
+                {
+                    if (r >= 2)
+                    {
+                        h4b_uint32_t cnt = (r - 2 > 255) ? 255 : (r - 2);
+                        output_data[o++] = 0x00;
+                        output_data[o++] = 0x00;
+                        output_data[o++] = (h4b_uint8_t)cnt;
+                        r -= cnt + 2;
+                        if (r == 0) break;
+                        if (r == 1) { output_data[o++] = 0x00; break; }
+                    }
+                    else
+                    {
+                        output_data[o++] = 0x00;
+                        break;
+                    }
+                }
+                i += run;
+                continue;
+            }
+            /* lone transformed zero */
+            output_data[o++] = 0x00;
+            i++;
+            continue;
+        }
+        output_data[o++] = (h4b_uint8_t)(input_data[i] ^ (i ? input_data[i - 1] : 0));
+        i++;
+    }
+    return o;
+}
+
+/**
+ * @brief Encode the input data using the nearest Huffman tree.
+ *
+ * @param input_data Pointer to the input data array (already preprocessed
+ *                   when transform is set).
+ * @param input_len Length of the input data.
+ * @param transform 1 if input_data is in XOR+ZRL domain, 0 for raw data.
  * @param output_data Pointer to the output data array.
  * @param output_len Pointer to the length of the output data.
  */
-void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t *output_data, h4b_uint32_t *output_len)
+void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t transform,
+                h4b_uint8_t *output_data, h4b_uint32_t *output_len)
 {
     h4b_uint32_t i;
     h4b_int32_t j;
@@ -554,7 +629,8 @@ void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t *ou
     {
         set_bit(output_data, bit_pos, 0);
     }
-    output_data[0] = (h4b_uint8_t)((cluster << 3) + padding);
+    /* header byte: [cluster:4][transform:1][padding:3] */
+    output_data[0] = (h4b_uint8_t)((cluster << 4) | ((transform & 1U) << 3) | padding);
 
     *output_len =  bit_pos / 8;
 }
@@ -563,26 +639,103 @@ void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t *ou
 #endif // !USE_ENCODE
 
 
+/* ------------------------------------------------------------------ */
+/*  Decode side                                                        */
+/*                                                                    */
+/*  Stream header byte: [cluster:4][transform:1][padding:3]           */
+/*                                                                    */
+/*  Decoding is a purely sequential byte chain with no read-back:      */
+/*    Huffman bit-walk -> (transform? ZRL expand + XOR undo) -> emit   */
+/*  so the streaming variant can write straight to a display bus       */
+/*  with no intermediate buffer.                                      */
+/* ------------------------------------------------------------------ */
+
+typedef struct
+{
+    h4b_emit_fn emit;
+    void *ctx;
+    h4b_uint8_t transform;   /* header flag                            */
+    h4b_uint8_t state;       /* ZRL: 0=normal 1=saw one 0 2=need count */
+    h4b_uint8_t prev;        /* previous FINAL byte (XOR undo)          */
+} h4b_sink_t;
+
+/* undo one XOR step and forward the final byte */
+static void sink_xor_emit(h4b_sink_t *s, h4b_uint8_t t)
+{
+    h4b_uint8_t b = (h4b_uint8_t)(t ^ s->prev);
+    s->prev = b;
+    s->emit(s->ctx, b);
+}
+
+/* feed one byte of the (possibly transformed) huffman output */
+static void sink_byte(h4b_sink_t *s, h4b_uint8_t b)
+{
+    if (!s->transform)
+    {
+        s->emit(s->ctx, b);
+        return;
+    }
+    switch (s->state)
+    {
+    case 0:
+        if (b == 0x00) { s->state = 1; return; }
+        sink_xor_emit(s, b);
+        return;
+    case 1:
+        if (b == 0x00) { s->state = 2; return; }   /* "00 00": marker */
+        sink_xor_emit(s, 0x00);                    /* lone literal zero */
+        sink_xor_emit(s, b);
+        s->state = 0;
+        return;
+    default:                                        /* b is the run count */
+    {
+        h4b_uint16_t n = (h4b_uint16_t)(b + 2U);
+        while (n--) sink_xor_emit(s, 0x00);
+        s->state = 0;
+        return;
+    }
+    }
+}
+
+/* end of stream: a pending lone zero still needs to be emitted */
+static void sink_flush(h4b_sink_t *s)
+{
+    if (s->transform && (s->state == 1))
+    {
+        sink_xor_emit(s, 0x00);
+    }
+}
+
 /**
- * @brief Decode the input data using the Huffman tree table.
- * 
- * @param input_data Pointer to the input data array.
- * @param input_len Length of the input data.
- * @param table Pointer to the Huffman tree table.
- * @param output_data Pointer to the output data array.
- * @param output_len Pointer to the length of the output data.
+ * @brief Streaming decode: bytes are handed to the caller's emit callback
+ *        as soon as they are reconstructed.
+ *
+ * @param input_data Compressed array (header byte + huffman bits).
+ * @param input_len Length of the compressed array.
+ * @param table Huffman tree tables (from codegen output).
+ * @param emit Byte-sink callback.
+ * @param ctx Opaque context passed through to the callback.
  */
-void h4b_decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, huffman_tree_tbl_t *table, h4b_uint8_t *output_data, h4b_uint32_t *output_len)
+void h4b_decode_stream(const h4b_uint8_t *input_data, h4b_uint32_t input_len,
+                       const huffman_tree_tbl_t *table,
+                       h4b_emit_fn emit, void *ctx)
 {
     h4b_uint32_t i;
     h4b_uint8_t byte;
     h4b_uint8_t index = MAX_NODES - MAX_SYMBOLS - 1;
-    h4b_uint32_t byte_pos = 0;
+    h4b_uint8_t staged = 0;
     h4b_uint8_t high_bits = 1;
-    h4b_uint8_t padding = input_data[0] & 0x07;
-    h4b_uint8_t *data_ptr = &input_data[1];   // skip the first byte(custer and padding)
+    h4b_uint8_t padding = (h4b_uint8_t)(input_data[0] & 0x07);
+    const h4b_uint8_t *data_ptr = &input_data[1];
     h4b_uint32_t total_bits = ((input_len - 1) << 3) - padding;
-    huffman_tree_tbl_t *current_table = &table[input_data[0] >> 3];
+    const huffman_tree_tbl_t *current_table = &table[input_data[0] >> 4];
+    h4b_sink_t sink;
+
+    sink.emit = emit;
+    sink.ctx = ctx;
+    sink.transform = (h4b_uint8_t)((input_data[0] >> 3) & 1U);
+    sink.state = 0;
+    sink.prev = 0;
 
     for (i = 0; i < total_bits; i++)
     {
@@ -593,11 +746,11 @@ void h4b_decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, huffman_tree_tb
         {
             if (high_bits)
             {
-                output_data[byte_pos] = (h4b_uint8_t)(index << 4);
+                staged = (h4b_uint8_t)(index << 4);
             }
             else
             {
-                output_data[byte_pos++] |= index;
+                sink_byte(&sink, (h4b_uint8_t)(staged | index));
             }
             index = MAX_NODES - MAX_SYMBOLS - 1;
             high_bits ^= 1;
@@ -608,6 +761,95 @@ void h4b_decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, huffman_tree_tb
         }
     }
 
-    *output_len = byte_pos;
+    sink_flush(&sink);
+}
+
+/**
+ * @brief Decode the input data using the Huffman tree table.
+ *
+ * Direct buffer implementation: same walk/ZRL/XOR chain as
+ * h4b_decode_stream, but writing straight into the output buffer with
+ * no callback indirection - smaller code for buffer-based projects.
+ *
+ * @param input_data Pointer to the input data array.
+ * @param input_len Length of the input data array.
+ * @param table Pointer to the Huffman tree table.
+ * @param output_data Pointer to the output data array (must be large
+ *                    enough for the ORIGINAL, i.e. post-transform, data).
+ * @param output_len Pointer to the length of the output data.
+ */
+void h4b_decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, huffman_tree_tbl_t *table, h4b_uint8_t *output_data, h4b_uint32_t *output_len)
+{
+    h4b_uint32_t i;
+    h4b_uint32_t o = 0;
+    h4b_uint8_t byte;
+    h4b_uint8_t index = MAX_NODES - MAX_SYMBOLS - 1;
+    h4b_uint8_t staged = 0;
+    h4b_uint8_t high_bits = 1;
+    h4b_uint8_t transform = (h4b_uint8_t)((input_data[0] >> 3) & 1U);
+    h4b_uint8_t padding = (h4b_uint8_t)(input_data[0] & 0x07);
+    h4b_uint8_t state = 0;                /* ZRL: 0=normal 1=saw one 0 2=need count */
+    h4b_uint8_t prev = 0;                 /* previous FINAL byte (XOR undo)          */
+    const h4b_uint8_t *data_ptr = &input_data[1];
+    h4b_uint32_t total_bits = ((input_len - 1) << 3) - padding;
+    const huffman_tree_tbl_t *current_table = &table[input_data[0] >> 4];
+
+    for (i = 0; i < total_bits; i++)
+    {
+        byte = data_ptr[i >> 3];
+        index = ((byte << (i & 0x07)) & 0x80) ? (*current_table)[index][1] : (*current_table)[index][0];
+
+        if (index < MAX_SYMBOLS)
+        {
+            if (high_bits)
+            {
+                staged = (h4b_uint8_t)(index << 4);
+            }
+            else
+            {
+                h4b_uint8_t t = (h4b_uint8_t)(staged | index);
+                if (!transform)
+                {
+                    output_data[o++] = t;
+                }
+                else if (state == 0)
+                {
+                    if (t == 0x00) { state = 1; }
+                    else { prev = (h4b_uint8_t)(t ^ prev); output_data[o++] = prev; }
+                }
+                else if (state == 1)
+                {
+                    if (t == 0x00) { state = 2; }         /* "00 00": marker */
+                    else
+                    {
+                        output_data[o++] = prev;          /* lone literal zero */
+                        prev = (h4b_uint8_t)(t ^ prev);
+                        output_data[o++] = prev;
+                        state = 0;
+                    }
+                }
+                else
+                {
+                    h4b_uint16_t n = (h4b_uint16_t)(t + 2U);
+                    while (n--) { output_data[o++] = prev; }
+                    state = 0;
+                }
+            }
+            index = MAX_NODES - MAX_SYMBOLS - 1;
+            high_bits ^= 1;
+        }
+        else
+        {
+            index -= MAX_SYMBOLS;
+        }
+    }
+
+    /* a pending lone transformed zero still needs to be emitted */
+    if (transform && (state == 1))
+    {
+        output_data[o++] = prev;
+    }
+
+    *output_len = o;
 }
 
