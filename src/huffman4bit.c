@@ -12,25 +12,25 @@
 /**********************
  *  STATIC VARIABLES
  **********************/
-static huffman_tree_t huffman_tree[MAX_CLUSTER_COUNT];     // Huffman tree for each cluster
+static huffman_tree_t huffman_tree[MAX_CLUSTER_COUNT];     /* Huffman tree for each cluster */
 static centroid_t centroids;
 static input_buffer_t input_buffer;
 
 /********************** 
  *  STATIC PROTOTYPES
  **********************/
-static void cal_huffman_table(h4b_uint8_t k);
-static void export_huffman_tree_table(h4b_uint8_t k, huffman_tree_tbl_t *table);
-static void build_huffman_tree(h4b_uint8_t k);
-static h4b_float euclidean_distance(symbol_frequencies_t p1, symbol_frequencies_t p2);
-static void count_freq_append(h4b_uint8_t k, h4b_uint8_t *data, h4b_uint32_t size);
+static void cal_huffman_table(uint8_t k);
+static void export_huffman_tree_table(uint8_t k, huffman_tree_tbl_t *table);
+static void build_huffman_tree(uint8_t k);
+static double euclidean_distance(symbol_frequencies_t p1, symbol_frequencies_t p2);
+static void count_freq_append(uint8_t k, uint8_t *data, uint32_t size);
 static void assign_points(void);
 static void update_centroids(void);
 static void calculate_features(void);
-static void init_centroids(h4b_uint8_t k);
+static void init_centroids(uint8_t k);
 static void k_means(void);
-static h4b_uint8_t find_nearest_cluster(h4b_uint8_t *input_data, h4b_uint32_t input_len);
-static void set_bit(h4b_uint8_t *output_data, h4b_uint32_t pos, h4b_uint8_t bit);
+static uint8_t find_nearest_cluster(uint8_t *input_data, uint32_t input_len);
+static void set_bit(uint8_t *output_data, uint32_t pos, uint8_t bit);
 
 /**********************
  *   STATIC FUNCTIONS
@@ -40,20 +40,20 @@ static void set_bit(h4b_uint8_t *output_data, h4b_uint32_t pos, h4b_uint8_t bit)
  * 
  * @param k Cluster index.
  */
-static void cal_huffman_table(h4b_uint8_t k)
+static void cal_huffman_table(uint8_t k)
 {
-    h4b_uint8_t i;
-    h4b_uint8_t index;
-    h4b_uint8_t parent;
+    uint8_t i;
+    uint8_t index;
+    uint8_t parent;
     for (i = 0; i < MAX_SYMBOLS; i++)
     {
         index = i;
         while (huffman_tree[k].nodes[index].parent != -1)
         {
-            parent = (h4b_uint8_t)huffman_tree[k].nodes[index].parent;
+            parent = (uint8_t)huffman_tree[k].nodes[index].parent;
             if (huffman_tree[k].nodes[parent].right == index)
             {
-                huffman_tree[k].code_table[i].code |= ((h4b_uint32_t)1 << huffman_tree[k].code_table[i].length);
+                huffman_tree[k].code_table[i].code |= ((uint32_t)1 << huffman_tree[k].code_table[i].length);
             }
             huffman_tree[k].code_table[i].length++;
             index = parent;
@@ -69,13 +69,13 @@ static void cal_huffman_table(h4b_uint8_t k)
  * @note Only export nodes that are not leaf nodes.
  *       The table is a 2D array where the first dimension represents the nodes and the second dimension represents the left and right children of each node.   
  */
-static void export_huffman_tree_table(h4b_uint8_t k, huffman_tree_tbl_t *table)
+static void export_huffman_tree_table(uint8_t k, huffman_tree_tbl_t *table)
 {
-    h4b_uint8_t i;
+    uint8_t i;
     for (i = MAX_SYMBOLS; i < MAX_NODES; i++)
     {
-        (*table)[i - MAX_SYMBOLS][0] = (h4b_uint8_t)huffman_tree[k].nodes[i].left;
-        (*table)[i - MAX_SYMBOLS][1] = (h4b_uint8_t)huffman_tree[k].nodes[i].right;
+        (*table)[i - MAX_SYMBOLS][0] = (uint8_t)huffman_tree[k].nodes[i].left;
+        (*table)[i - MAX_SYMBOLS][1] = (uint8_t)huffman_tree[k].nodes[i].right;
     }
 }
 
@@ -84,40 +84,40 @@ static void export_huffman_tree_table(h4b_uint8_t k, huffman_tree_tbl_t *table)
  * 
  * @param k Cluster index.
  */
-static void build_huffman_tree(h4b_uint8_t k)
+static void build_huffman_tree(uint8_t k)
 {
-    h4b_int8_t node_count = MAX_SYMBOLS;
-    h4b_int8_t min1, min2;
-    h4b_int8_t i;
+    int8_t node_count = MAX_SYMBOLS;
+    int8_t min1, min2;
+    int8_t i;
     
-    while ((h4b_uint8_t)node_count < MAX_NODES)
+    while ((uint8_t)node_count < MAX_NODES)
     {
         min1 = min2 = -1;
-        // find the two nodes with the smallest frequency
+        /* find the two nodes with the smallest frequency */
         for (i = 0; i < node_count; i++) 
         {
-            if (huffman_tree[k].nodes[(h4b_uint8_t)i].parent == -1) 
+            if (huffman_tree[k].nodes[(uint8_t)i].parent == -1) 
             {
-                if (min1 == -1 || huffman_tree[k].nodes[(h4b_uint8_t)i].freq < huffman_tree[k].nodes[(h4b_uint8_t)min1].freq) 
+                if (min1 == -1 || huffman_tree[k].nodes[(uint8_t)i].freq < huffman_tree[k].nodes[(uint8_t)min1].freq) 
                 {
                     min2 = min1;
                     min1 = i;
                 } 
-                else if (min2 == -1 || huffman_tree[k].nodes[(h4b_uint8_t)i].freq < huffman_tree[k].nodes[(h4b_uint8_t)min2].freq) 
+                else if (min2 == -1 || huffman_tree[k].nodes[(uint8_t)i].freq < huffman_tree[k].nodes[(uint8_t)min2].freq) 
                 {
                     min2 = i;
                 }
             }
         }
 
-        // merge the two nodes
-        huffman_tree[k].nodes[(h4b_uint8_t)node_count].freq = huffman_tree[k].nodes[(h4b_uint8_t)min1].freq + huffman_tree[k].nodes[(h4b_uint8_t)min2].freq;
-        huffman_tree[k].nodes[(h4b_uint8_t)node_count].left = min1;
-        huffman_tree[k].nodes[(h4b_uint8_t)node_count].right = min2;
-        huffman_tree[k].nodes[(h4b_uint8_t)node_count].parent = -1;
+        /* merge the two nodes */
+        huffman_tree[k].nodes[(uint8_t)node_count].freq = huffman_tree[k].nodes[(uint8_t)min1].freq + huffman_tree[k].nodes[(uint8_t)min2].freq;
+        huffman_tree[k].nodes[(uint8_t)node_count].left = min1;
+        huffman_tree[k].nodes[(uint8_t)node_count].right = min2;
+        huffman_tree[k].nodes[(uint8_t)node_count].parent = -1;
 
-        huffman_tree[k].nodes[(h4b_uint8_t)min1].parent = node_count;
-        huffman_tree[k].nodes[(h4b_uint8_t)min2].parent = node_count;
+        huffman_tree[k].nodes[(uint8_t)min1].parent = node_count;
+        huffman_tree[k].nodes[(uint8_t)min2].parent = node_count;
 
         node_count++;
     }
@@ -129,12 +129,12 @@ static void build_huffman_tree(h4b_uint8_t k)
  * 
  * @param p1 Pointer to the first data point.
  * @param p2 Pointer to the second data point.
- * @return h4b_float Euclidean distance between the two data points.
+ * @return double Euclidean distance between the two data points.
  */
-static h4b_float euclidean_distance(symbol_frequencies_t p1, symbol_frequencies_t p2)
+static double euclidean_distance(symbol_frequencies_t p1, symbol_frequencies_t p2)
 {
-    h4b_uint8_t i;
-    h4b_float sum = 0;
+    uint8_t i;
+    double sum = 0;
     for (i = 0; i < MAX_SYMBOLS; i++)
     {
         sum += (p1[i] - p2[i]) * (p1[i] - p2[i]);
@@ -150,10 +150,10 @@ static h4b_float euclidean_distance(symbol_frequencies_t p1, symbol_frequencies_
  * @param data Pointer to the input data array.
  * @param size Length of the input data.
  */
-static void count_freq_append(h4b_uint8_t k, h4b_uint8_t *data, h4b_uint32_t size)
+static void count_freq_append(uint8_t k, uint8_t *data, uint32_t size)
 {
-    h4b_uint8_t h, l;
-    h4b_uint32_t i;
+    uint8_t h, l;
+    uint32_t i;
     
     for (i = 0; i < size; i++)
     {
@@ -169,10 +169,10 @@ static void count_freq_append(h4b_uint8_t k, h4b_uint8_t *data, h4b_uint32_t siz
  * @brief Assign points to the nearest cluster.
  */
 static void assign_points(void) {
-    h4b_uint32_t i;
-    h4b_uint8_t j;
-    h4b_float min_dist, dist;
-    h4b_uint8_t min_cluster;
+    uint32_t i;
+    uint8_t j;
+    double min_dist, dist;
+    uint8_t min_cluster;
 
     for (i = 0; i < input_buffer.array_count; i++) {
         min_dist = euclidean_distance(input_buffer.array_data[i].feature, centroids.centroid_points[0]);
@@ -196,11 +196,11 @@ static void assign_points(void) {
  */
 static void update_centroids(void)
 {
-    h4b_uint32_t i, j;
-    h4b_uint32_t cluster_size[MAX_CLUSTER_COUNT] = {0};
+    uint32_t i, j;
+    uint32_t cluster_size[MAX_CLUSTER_COUNT] = {0};
     symbol_frequencies_t sum[MAX_CLUSTER_COUNT] = {0};
 
-    // 计算每个簇的大小和特征值之和
+    /* 计算每个簇的大小和特征值之和 */
     for (i = 0; i < input_buffer.array_count; i++)
     {
         cluster_size[input_buffer.array_data[i].cluster_id]++;
@@ -210,7 +210,7 @@ static void update_centroids(void)
         }
     }
 
-    // 更新质心
+    /* 更新质心 */
     for (i = 0; i < centroids.points_count; i++)
     {
         for (j = 0; j < MAX_SYMBOLS; j++)
@@ -228,10 +228,10 @@ static void update_centroids(void)
  */
 static void calculate_features(void)
 {
-    h4b_uint32_t i, j;
-    h4b_uint32_t data_count[MAX_SYMBOLS];
-    h4b_uint32_t total_count;
-    h4b_uint8_t h, l;
+    uint32_t i, j;
+    uint32_t data_count[MAX_SYMBOLS];
+    uint32_t total_count;
+    uint8_t h, l;
     array_data_t *array = NULL;
 
     for (i = 0; i < input_buffer.array_count; i++)
@@ -250,7 +250,7 @@ static void calculate_features(void)
 
         for (j = 0; j < MAX_SYMBOLS; j++)
         {
-            array->feature[j] = (h4b_float)data_count[j] / total_count;
+            array->feature[j] = (double)data_count[j] / total_count;
         }
 
     }
@@ -261,11 +261,11 @@ static void calculate_features(void)
  * 
  * @param k Number of centroids.
  */
-void init_centroids(h4b_uint8_t k)
+void init_centroids(uint8_t k)
 {
-    h4b_uint8_t i, j;
+    uint8_t i, j;
 
-    srand((h4b_uint32_t)time(NULL));
+    srand((uint32_t)time(NULL));
     
     if (k > MAX_CLUSTER_COUNT)
     {
@@ -274,7 +274,7 @@ void init_centroids(h4b_uint8_t k)
 
     for (i = 0; i < k;)
     {
-        centroids.point_index[i] = (h4b_uint32_t)((h4b_uint32_t)rand() % input_buffer.array_count);
+        centroids.point_index[i] = (uint32_t)((uint32_t)rand() % input_buffer.array_count);
         for (j = 0; j <= i; j++)
         {
             if (i == j)
@@ -301,8 +301,8 @@ void init_centroids(h4b_uint8_t k)
  */
 static void k_means(void)
 {
-    h4b_uint32_t iter = 0;
-    h4b_uint8_t changed;
+    uint32_t iter = 0;
+    uint8_t changed;
     symbol_frequencies_t old_centroids[MAX_CLUSTER_COUNT];
 
     do {
@@ -329,17 +329,17 @@ static void k_means(void)
  * 
  * @param input_data Pointer to the input data array.
  * @param input_len Length of the input data.
- * @return h4b_uint8_t Nearest cluster index.
+ * @return uint8_t Nearest cluster index.
  */
-static h4b_uint8_t find_nearest_cluster(h4b_uint8_t *input_data, h4b_uint32_t input_len)
+static uint8_t find_nearest_cluster(uint8_t *input_data, uint32_t input_len)
 {
-    h4b_uint32_t i;
-    h4b_uint8_t h, l;
-    h4b_uint32_t data_count[MAX_SYMBOLS];
-    h4b_uint32_t total_count;
+    uint32_t i;
+    uint8_t h, l;
+    uint32_t data_count[MAX_SYMBOLS];
+    uint32_t total_count;
     symbol_frequencies_t feature;
-    h4b_float min_dist, dist;
-    h4b_uint8_t min_cluster;
+    double min_dist, dist;
+    uint8_t min_cluster;
 
     memset(data_count, 0, sizeof(data_count));
     total_count = 0;
@@ -354,7 +354,7 @@ static h4b_uint8_t find_nearest_cluster(h4b_uint8_t *input_data, h4b_uint32_t in
 
     for (i = 0; i < MAX_SYMBOLS; i++)
     {
-        feature[i] = (h4b_float)data_count[i] / total_count;
+        feature[i] = (double)data_count[i] / total_count;
     }
 
     min_dist = euclidean_distance(feature, centroids.centroid_points[0]);
@@ -366,7 +366,7 @@ static h4b_uint8_t find_nearest_cluster(h4b_uint8_t *input_data, h4b_uint32_t in
         if (dist < min_dist)
         {
             min_dist = dist;
-            min_cluster = (h4b_uint8_t)i;
+            min_cluster = (uint8_t)i;
         }
     }
 
@@ -384,8 +384,8 @@ static h4b_uint8_t find_nearest_cluster(h4b_uint8_t *input_data, h4b_uint32_t in
  */
 void h4b_init(void)
 {
-    h4b_uint8_t i, k;
-    h4b_uint32_t j;
+    uint8_t i, k;
+    uint32_t j;
     for (k = 0; k < MAX_CLUSTER_COUNT; k++)
     {
         for (i = 0; i < MAX_NODES; i++)
@@ -401,7 +401,7 @@ void h4b_init(void)
     }
     centroids.points_count = 0;
 
-    // 释放原始数组
+    /* 释放原始数组 */
     if (input_buffer.array_data != NULL)
     {
         for (j = 0; j < input_buffer.array_count; j++)
@@ -422,7 +422,7 @@ void h4b_init(void)
  * @param input_data Pointer to the input data array.
  * @param input_len Length of the input data.
  */
-void h4b_add_array(h4b_uint8_t *input_data, h4b_uint32_t input_len)
+void h4b_add_array(uint8_t *input_data, uint32_t input_len)
 {
     array_data_t *new_array = NULL;
 
@@ -442,7 +442,7 @@ void h4b_add_array(h4b_uint8_t *input_data, h4b_uint32_t input_len)
 
     new_array = &input_buffer.array_data[input_buffer.array_count];
     new_array->array_size = input_len;
-    new_array->array_ptr = (h4b_uint8_t*)malloc(input_len);
+    new_array->array_ptr = (uint8_t*)malloc(input_len);
     memcpy(new_array->array_ptr, input_data, input_len);
     input_buffer.array_count++;
 }
@@ -454,11 +454,11 @@ void h4b_add_array(h4b_uint8_t *input_data, h4b_uint32_t input_len)
  * 
  * @param k number of centroids.
  */
-void h4b_clustering(h4b_uint8_t k)
+void h4b_clustering(uint8_t k)
 {
-    calculate_features();   // 计算特征
-    init_centroids(k);      // 随机初始化质心
-    k_means();              // K-means算法
+    calculate_features();   /* 计算特征 */
+    init_centroids(k);      /* 随机初始化质心 */
+    k_means();              /* K-means算法 */
 }
 
 /**
@@ -473,10 +473,10 @@ void h4b_clustering(h4b_uint8_t k)
  */
 void h4b_create_huffman_tree(huffman_tree_tbl_t *tables)
 {
-    h4b_uint8_t i;
-    h4b_uint32_t j;
+    uint8_t i;
+    uint32_t j;
 
-    for (i = 0; i < centroids.points_count; i++)    // create huffman tree for each cluster
+    for (i = 0; i < centroids.points_count; i++)    /* create huffman tree for each cluster */
     {
         for (j = 0; j < input_buffer.array_count; j++)
         {
@@ -499,15 +499,15 @@ void h4b_create_huffman_tree(huffman_tree_tbl_t *tables)
  * @param pos Position of the bit to set.
  * @param bit Value of the bit to set (0 or 1).
  */
-static void set_bit(h4b_uint8_t *output_data, h4b_uint32_t pos, h4b_uint8_t bit)
+static void set_bit(uint8_t *output_data, uint32_t pos, uint8_t bit)
 {
     if (bit)
     {
-        output_data[pos >> 3] |= (h4b_uint8_t)(1 << (7 - (pos & 0x07)));
+        output_data[pos >> 3] |= (uint8_t)(1 << (7 - (pos & 0x07)));
     }
     else
     {
-        output_data[pos >> 3] &= (h4b_uint8_t)~(1 << (7 - (pos & 0x07)));
+        output_data[pos >> 3] &= (uint8_t)~(1 << (7 - (pos & 0x07)));
     }
 }
 
@@ -523,11 +523,11 @@ static void set_bit(h4b_uint8_t *output_data, h4b_uint32_t pos, h4b_uint8_t bit)
  * @param output_data Pointer to the output buffer (needs 2*input_len bytes).
  * @return Length of the transformed data.
  */
-h4b_uint32_t h4b_xor_zrl_encode(const h4b_uint8_t *input_data, h4b_uint32_t input_len,
-                                h4b_uint8_t *output_data)
+uint32_t h4b_xor_zrl_encode(const uint8_t *input_data, uint32_t input_len,
+                                uint8_t *output_data)
 {
-    h4b_uint32_t i = 0;
-    h4b_uint32_t o = 0;
+    uint32_t i = 0;
+    uint32_t o = 0;
 
     while (i < input_len)
     {
@@ -539,8 +539,8 @@ h4b_uint32_t h4b_xor_zrl_encode(const h4b_uint8_t *input_data, h4b_uint32_t inpu
         if ((i == 0 && input_data[0] == 0x00) ||
             (i > 0 && input_data[i] == input_data[i - 1]))
         {
-            h4b_uint32_t run = 1;
-            h4b_uint32_t r;
+            uint32_t run = 1;
+            uint32_t r;
 
             while ((i + run < input_len) && (input_data[i + run] == input_data[i + run - 1]))
             {
@@ -553,10 +553,10 @@ h4b_uint32_t h4b_xor_zrl_encode(const h4b_uint8_t *input_data, h4b_uint32_t inpu
                 {
                     if (r >= 2)
                     {
-                        h4b_uint32_t cnt = (r - 2 > 255) ? 255 : (r - 2);
+                        uint32_t cnt = (r - 2 > 255) ? 255 : (r - 2);
                         output_data[o++] = 0x00;
                         output_data[o++] = 0x00;
-                        output_data[o++] = (h4b_uint8_t)cnt;
+                        output_data[o++] = (uint8_t)cnt;
                         r -= cnt + 2;
                         if (r == 0) break;
                         if (r == 1) { output_data[o++] = 0x00; break; }
@@ -575,7 +575,7 @@ h4b_uint32_t h4b_xor_zrl_encode(const h4b_uint8_t *input_data, h4b_uint32_t inpu
             i++;
             continue;
         }
-        output_data[o++] = (h4b_uint8_t)(input_data[i] ^ (i ? input_data[i - 1] : 0));
+        output_data[o++] = (uint8_t)(input_data[i] ^ (i ? input_data[i - 1] : 0));
         i++;
     }
     return o;
@@ -591,17 +591,17 @@ h4b_uint32_t h4b_xor_zrl_encode(const h4b_uint8_t *input_data, h4b_uint32_t inpu
  * @param output_data Pointer to the output data array.
  * @param output_len Pointer to the length of the output data.
  */
-void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t transform,
-                h4b_uint8_t *output_data, h4b_uint32_t *output_len)
+void h4b_encode(uint8_t *input_data, uint32_t input_len, uint8_t transform,
+                uint8_t *output_data, uint32_t *output_len)
 {
-    h4b_uint32_t i;
-    h4b_int32_t j;
-    h4b_uint32_t bit_pos = 8;
-    h4b_uint32_t code;
-    h4b_uint8_t length;
-    h4b_uint8_t padding;
-    h4b_uint8_t cluster;
-    h4b_uint8_t data_h, data_l;
+    uint32_t i;
+    int32_t j;
+    uint32_t bit_pos = 8;
+    uint32_t code;
+    uint8_t length;
+    uint8_t padding;
+    uint8_t cluster;
+    uint8_t data_h, data_l;
     cluster = find_nearest_cluster(input_data, input_len);
 
     for (i = 0; i < input_len; i++)
@@ -630,13 +630,13 @@ void h4b_encode(h4b_uint8_t *input_data, h4b_uint32_t input_len, h4b_uint8_t tra
         set_bit(output_data, bit_pos, 0);
     }
     /* header byte: [cluster:4][transform:1][padding:3] */
-    output_data[0] = (h4b_uint8_t)((cluster << 4) | ((transform & 1U) << 3) | padding);
+    output_data[0] = (uint8_t)((cluster << 4) | ((transform & 1U) << 3) | padding);
 
     *output_len =  bit_pos / 8;
 }
 
 
-#endif // !USE_ENCODE
+#endif /* !USE_ENCODE */
 
 
 /* ------------------------------------------------------------------ */
@@ -654,21 +654,21 @@ typedef struct
 {
     h4b_emit_fn emit;
     void *ctx;
-    h4b_uint8_t transform;   /* header flag                            */
-    h4b_uint8_t state;       /* ZRL: 0=normal 1=saw one 0 2=need count */
-    h4b_uint8_t prev;        /* previous FINAL byte (XOR undo)          */
+    uint8_t transform;   /* header flag                            */
+    uint8_t state;       /* ZRL: 0=normal 1=saw one 0 2=need count */
+    uint8_t prev;        /* previous FINAL byte (XOR undo)          */
 } h4b_sink_t;
 
 /* undo one XOR step and forward the final byte */
-static void sink_xor_emit(h4b_sink_t *s, h4b_uint8_t t)
+static void sink_xor_emit(h4b_sink_t *s, uint8_t t)
 {
-    h4b_uint8_t b = (h4b_uint8_t)(t ^ s->prev);
+    uint8_t b = (uint8_t)(t ^ s->prev);
     s->prev = b;
     s->emit(s->ctx, b);
 }
 
 /* feed one byte of the (possibly transformed) huffman output */
-static void sink_byte(h4b_sink_t *s, h4b_uint8_t b)
+static void sink_byte(h4b_sink_t *s, uint8_t b)
 {
     if (!s->transform)
     {
@@ -689,7 +689,7 @@ static void sink_byte(h4b_sink_t *s, h4b_uint8_t b)
         return;
     default:                                        /* b is the run count */
     {
-        h4b_uint16_t n = (h4b_uint16_t)(b + 2U);
+        uint16_t n = (uint16_t)(b + 2U);
         while (n--) sink_xor_emit(s, 0x00);
         s->state = 0;
         return;
@@ -716,24 +716,24 @@ static void sink_flush(h4b_sink_t *s)
  * @param emit Byte-sink callback.
  * @param ctx Opaque context passed through to the callback.
  */
-void h4b_decode_stream(const h4b_uint8_t *input_data, h4b_uint32_t input_len,
+void h4b_decode_stream(const uint8_t *input_data, uint32_t input_len,
                        const huffman_tree_tbl_t *table,
                        h4b_emit_fn emit, void *ctx)
 {
-    h4b_uint32_t i;
-    h4b_uint8_t byte;
-    h4b_uint8_t index = MAX_NODES - MAX_SYMBOLS - 1;
-    h4b_uint8_t staged = 0;
-    h4b_uint8_t high_bits = 1;
-    h4b_uint8_t padding = (h4b_uint8_t)(input_data[0] & 0x07);
-    const h4b_uint8_t *data_ptr = &input_data[1];
-    h4b_uint32_t total_bits = ((input_len - 1) << 3) - padding;
+    uint32_t i;
+    uint8_t byte;
+    uint8_t index = MAX_NODES - MAX_SYMBOLS - 1;
+    uint8_t staged = 0;
+    uint8_t high_bits = 1;
+    uint8_t padding = (uint8_t)(input_data[0] & 0x07);
+    const uint8_t *data_ptr = &input_data[1];
+    uint32_t total_bits = ((input_len - 1) << 3) - padding;
     const huffman_tree_tbl_t *current_table = &table[input_data[0] >> 4];
     h4b_sink_t sink;
 
     sink.emit = emit;
     sink.ctx = ctx;
-    sink.transform = (h4b_uint8_t)((input_data[0] >> 3) & 1U);
+    sink.transform = (uint8_t)((input_data[0] >> 3) & 1U);
     sink.state = 0;
     sink.prev = 0;
 
@@ -746,11 +746,11 @@ void h4b_decode_stream(const h4b_uint8_t *input_data, h4b_uint32_t input_len,
         {
             if (high_bits)
             {
-                staged = (h4b_uint8_t)(index << 4);
+                staged = (uint8_t)(index << 4);
             }
             else
             {
-                sink_byte(&sink, (h4b_uint8_t)(staged | index));
+                sink_byte(&sink, (uint8_t)(staged | index));
             }
             index = MAX_NODES - MAX_SYMBOLS - 1;
             high_bits ^= 1;
@@ -778,20 +778,20 @@ void h4b_decode_stream(const h4b_uint8_t *input_data, h4b_uint32_t input_len,
  *                    enough for the ORIGINAL, i.e. post-transform, data).
  * @param output_len Pointer to the length of the output data.
  */
-void h4b_decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, huffman_tree_tbl_t *table, h4b_uint8_t *output_data, h4b_uint32_t *output_len)
+void h4b_decode(uint8_t *input_data, uint32_t input_len, huffman_tree_tbl_t *table, uint8_t *output_data, uint32_t *output_len)
 {
-    h4b_uint32_t i;
-    h4b_uint32_t o = 0;
-    h4b_uint8_t byte;
-    h4b_uint8_t index = MAX_NODES - MAX_SYMBOLS - 1;
-    h4b_uint8_t staged = 0;
-    h4b_uint8_t high_bits = 1;
-    h4b_uint8_t transform = (h4b_uint8_t)((input_data[0] >> 3) & 1U);
-    h4b_uint8_t padding = (h4b_uint8_t)(input_data[0] & 0x07);
-    h4b_uint8_t state = 0;                /* ZRL: 0=normal 1=saw one 0 2=need count */
-    h4b_uint8_t prev = 0;                 /* previous FINAL byte (XOR undo)          */
-    const h4b_uint8_t *data_ptr = &input_data[1];
-    h4b_uint32_t total_bits = ((input_len - 1) << 3) - padding;
+    uint32_t i;
+    uint32_t o = 0;
+    uint8_t byte;
+    uint8_t index = MAX_NODES - MAX_SYMBOLS - 1;
+    uint8_t staged = 0;
+    uint8_t high_bits = 1;
+    uint8_t transform = (uint8_t)((input_data[0] >> 3) & 1U);
+    uint8_t padding = (uint8_t)(input_data[0] & 0x07);
+    uint8_t state = 0;                /* ZRL: 0=normal 1=saw one 0 2=need count */
+    uint8_t prev = 0;                 /* previous FINAL byte (XOR undo)          */
+    const uint8_t *data_ptr = &input_data[1];
+    uint32_t total_bits = ((input_len - 1) << 3) - padding;
     const huffman_tree_tbl_t *current_table = &table[input_data[0] >> 4];
 
     for (i = 0; i < total_bits; i++)
@@ -803,11 +803,11 @@ void h4b_decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, huffman_tree_tb
         {
             if (high_bits)
             {
-                staged = (h4b_uint8_t)(index << 4);
+                staged = (uint8_t)(index << 4);
             }
             else
             {
-                h4b_uint8_t t = (h4b_uint8_t)(staged | index);
+                uint8_t t = (uint8_t)(staged | index);
                 if (!transform)
                 {
                     output_data[o++] = t;
@@ -815,7 +815,7 @@ void h4b_decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, huffman_tree_tb
                 else if (state == 0)
                 {
                     if (t == 0x00) { state = 1; }
-                    else { prev = (h4b_uint8_t)(t ^ prev); output_data[o++] = prev; }
+                    else { prev = (uint8_t)(t ^ prev); output_data[o++] = prev; }
                 }
                 else if (state == 1)
                 {
@@ -823,14 +823,14 @@ void h4b_decode(h4b_uint8_t *input_data, h4b_uint32_t input_len, huffman_tree_tb
                     else
                     {
                         output_data[o++] = prev;          /* lone literal zero */
-                        prev = (h4b_uint8_t)(t ^ prev);
+                        prev = (uint8_t)(t ^ prev);
                         output_data[o++] = prev;
                         state = 0;
                     }
                 }
                 else
                 {
-                    h4b_uint16_t n = (h4b_uint16_t)(t + 2U);
+                    uint16_t n = (uint16_t)(t + 2U);
                     while (n--) { output_data[o++] = prev; }
                     state = 0;
                 }
