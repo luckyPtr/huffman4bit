@@ -5,6 +5,11 @@
 extern "C" {
 #endif
 
+/* Project-wide version (library + encoder tools), reported by
+ * "h4b_encoder -V". Bump on any change to the compressed stream layout
+ * or the public API. */
+#define H4B_VERSION         "1.0.0"
+
 /* Compile-time switch: decode-only (default, MCU friendly) vs encode+decode.
  * Default is 0 so that MCU projects can #include "huffman4bit.h" and compile
  * huffman4bit.c with zero extra configuration.
@@ -83,7 +88,9 @@ void h4b_init(void);
 void h4b_encode(uint8_t *input_data, uint32_t input_len, uint8_t transform,
                 uint8_t *output_data, uint32_t *output_len);
 void h4b_add_array(uint8_t *input_data, uint32_t input_len);
-void h4b_clustering(uint8_t k);
+/* Clusters the added arrays into k groups (deterministic init). Returns the
+ * effective cluster count: k clamped to the array count, 0 if none added. */
+uint8_t h4b_clustering(uint8_t k);
 void h4b_create_huffman_tree(huffman_tree_tbl_t *tables);
 
 /* Per-array preprocessing: XOR with previous byte, then zero-run-length
@@ -98,7 +105,12 @@ uint32_t h4b_xor_zrl_encode(const uint8_t *input_data, uint32_t input_len,
  * bus to decode straight to the screen with no frame buffer). */
 typedef void (*h4b_emit_fn)(void *ctx, uint8_t byte);
 
-void h4b_decode(uint8_t *input_data, uint32_t input_len, huffman_tree_tbl_t *table, uint8_t *output_data, uint32_t *output_len);
+/* Decoders trust the blob: input is produced by h4b_encoder and verified
+ * lossless at build time, so there are no size-costing bounds checks.
+ * output_data must fit the ORIGINAL (post-transform) data. */
+void h4b_decode(const uint8_t *input_data, uint32_t input_len,
+                const huffman_tree_tbl_t *table,
+                uint8_t *output_data, uint32_t *output_len);
 void h4b_decode_stream(const uint8_t *input_data, uint32_t input_len,
                        const huffman_tree_tbl_t *table,
                        h4b_emit_fn emit, void *ctx);

@@ -8,7 +8,6 @@
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
-#include <time.h>
 /**********************
  *  STATIC VARIABLES
  **********************/
@@ -213,6 +212,10 @@ static void update_centroids(void)
     /* 更新质心 */
     for (i = 0; i < centroids.points_count; i++)
     {
+        if (cluster_size[i] == 0U)
+        {
+            continue;   /* 空簇：保留上一轮质心，避免 0 除产生 NaN */
+        }
         for (j = 0; j < MAX_SYMBOLS; j++)
         {
             centroids.centroid_points[i][j] = sum[i][j] / cluster_size[i];
@@ -248,6 +251,12 @@ static void calculate_features(void)
             total_count += 2;
         }
 
+        if (total_count == 0U)
+        {
+            memset(array->feature, 0, sizeof(array->feature));   /* 空数组：特征全零 */
+            continue;
+        }
+
         for (j = 0; j < MAX_SYMBOLS; j++)
         {
             array->feature[j] = (double)data_count[j] / total_count;
@@ -258,40 +267,42 @@ static void calculate_features(void)
 
 /**
  * @brief Initialize the centroids.
- * 
+ *
+ * Seeds are deterministically evenly spaced over the input order
+ * (cluster i starts at array i * N / k). Unlike the previous
+ * srand(time(NULL)) pick this makes the whole encoder reproducible:
+ * the same input and k always yield the same clusters, Huffman
+ * tables and compressed output.
+ *
  * @param k Number of centroids.
  */
-void init_centroids(uint8_t k)
+static void init_centroids(uint8_t k)
 {
-    uint8_t i, j;
+    uint8_t i;
+    uint32_t step;
 
-    srand((uint32_t)time(NULL));
-    
     if (k > MAX_CLUSTER_COUNT)
     {
         k = MAX_CLUSTER_COUNT;
     }
-
-    for (i = 0; i < k;)
+    if ((uint32_t)k > input_buffer.array_count)
     {
-        centroids.point_index[i] = (uint32_t)((uint32_t)rand() % input_buffer.array_count);
-        for (j = 0; j <= i; j++)
-        {
-            if (i == j)
-            {
-                i++;
-                break;
-            }
-            if (centroids.point_index[i] == centroids.point_index[j])
-            {
-                break;
-            }
-        }
+        k = (uint8_t)input_buffer.array_count;   /* 多于数组数时无法选出 k 个不同索引 */
     }
+    if (k == 0U)
+    {
+        centroids.points_count = 0;
+        return;
+    }
+
+    step = input_buffer.array_count / k;
 
     for (i = 0; i < k; i++)
     {
-        memcpy(centroids.centroid_points[i], input_buffer.array_data[centroids.point_index[i]].feature, sizeof(symbol_frequencies_t));
+        centroids.point_index[i] = (uint32_t)i * step;
+        memcpy(centroids.centroid_points[i],
+               input_buffer.array_data[centroids.point_index[i]].feature,
+               sizeof(symbol_frequencies_t));
     }
     centroids.points_count = k;
 }
@@ -350,6 +361,11 @@ static uint8_t find_nearest_cluster(uint8_t *input_data, uint32_t input_len)
         data_count[h]++;
         data_count[l]++;
         total_count += 2;
+    }
+
+    if (total_count == 0U)
+    {
+        return 0;   /* 空数组：无特征可用，归入首簇 */
     }
 
     for (i = 0; i < MAX_SYMBOLS; i++)
@@ -451,14 +467,24 @@ void h4b_add_array(uint8_t *input_data, uint32_t input_len)
 
 /**
  * @brief Perform clustering on the input data.
- * 
+ *
  * @param k number of centroids.
+ * @return Effective cluster count actually used: k clamped to the number
+ *         of added arrays (and to MAX_CLUSTER_COUNT); 0 if no array was added.
  */
-void h4b_clustering(uint8_t k)
+uint8_t h4b_clustering(uint8_t k)
 {
+    if (input_buffer.array_count == 0U)
+    {
+        centroids.points_count = 0;
+        return 0;
+    }
+
     calculate_features();   /* 计算特征 */
-    init_centroids(k);      /* 随机初始化质心 */
+    init_centroids(k);      /* 确定性初始化质心 */
     k_means();              /* K-means算法 */
+
+    return centroids.points_count;
 }
 
 /**
@@ -647,7 +673,9 @@ void h4b_encode(uint8_t *input_data, uint32_t input_len, uint8_t transform,
 /*  Decoding is a purely sequential byte chain with no read-back:      */
 /*    Huffman bit-walk -> (transform? ZRL expand + XOR undo) -> emit   */
 /*  so the streaming variant can write straight to a display bus       */
-/*  with no intermediate buffer.                                      */
+/*  with no intermediate buffer.  The input blob is trusted: it is     */
+/*  produced by h4b_encoder and verified lossless at build time, so    */
+/*  the decoders carry no size-costing bounds checks.                  */
 /* ------------------------------------------------------------------ */
 
 typedef struct
@@ -778,7 +806,9 @@ void h4b_decode_stream(const uint8_t *input_data, uint32_t input_len,
  *                    enough for the ORIGINAL, i.e. post-transform, data).
  * @param output_len Pointer to the length of the output data.
  */
-void h4b_decode(uint8_t *input_data, uint32_t input_len, huffman_tree_tbl_t *table, uint8_t *output_data, uint32_t *output_len)
+void h4b_decode(const uint8_t *input_data, uint32_t input_len,
+                const huffman_tree_tbl_t *table,
+                uint8_t *output_data, uint32_t *output_len)
 {
     uint32_t i;
     uint32_t o = 0;
@@ -852,4 +882,3 @@ void h4b_decode(uint8_t *input_data, uint32_t input_len, huffman_tree_tbl_t *tab
 
     *output_len = o;
 }
-
