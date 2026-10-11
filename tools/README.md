@@ -133,9 +133,3 @@ Wrote badapple_h4b.c and badapple_h4b.h
 
 `prep` shows whether the array went through the XOR+ZRL transform (`xz`) or
 was stored raw (`-`); `clus` shows which cluster's table the blob uses.
-
-## See also
-
-- [examples/README.md](../examples/README.md) - the compressed asset shipped
-  with the repo was produced by exactly the command above
-- [Root README](../README.md) - compressed data format and decoder API

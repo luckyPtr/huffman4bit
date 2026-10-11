@@ -122,9 +122,3 @@ Wrote badapple_h4b.c and badapple_h4b.h
 
 `prep` 列显示该数组经过 XOR+ZRL 变换(`xz`)还是原样存储(`-`);`clus`
 列显示压缩块使用的簇表编号。
-
-## 另见
-
-- [examples/README.zh-CN.md](../examples/README.zh-CN.md) - 仓库附带的压缩
-  资源正是用上面的命令生成的
-- [根 README](../README.zh-CN.md) - 压缩数据格式与解码 API
