@@ -1,0 +1,15 @@
+# Keil MDK build output (objects, listings, map, axf/hex images)
+MDK-ARM/badapple_stm32/
+MDK-ARM/Listings/
+MDK-ARM/Objects/
+
+# transient build logs
+*.log
+
+# Keil per-user GUI state and editor backups
+*.uvguix.*
+*.bak
+MDK-ARM/Backup*/
+
+# debug probe transient logs
+JLinkLog.txt
